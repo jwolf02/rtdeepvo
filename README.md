@@ -23,7 +23,7 @@ each having a 1000 class label, just for comparison).
 So I propose an architecture with an input size of 384x256 and LSTMs with 256 cells which  
 makes the network contain ~40M variables of which 14M come pretrained from FlowNet.  
 This leads to a smalle enough network that it can be run in real time on a reasonably  
-sized computer (5 FPS on the Nvidia Jetson Nano, 20 FPS on Intel i5, 45 FPS on GPU). 
+sized computer (5 FPS on the Nvidia Jetson Nano, 20 FPS on Intel i5, 45 FPS on GPU).  
 The original architecture was so big that I could only make it run on my 16GB laptop  
 where it took 1200ms to run one iteration (compared to 45ms of my architecture).  
 It was too big for both my Desktop computer with 8GB RAM and 5GB GPU-RAM and the  
