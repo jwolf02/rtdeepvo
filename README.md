@@ -46,7 +46,7 @@ For validation two shorter sequences (06, 07) were used.
 As I was not using the full size of the Kitti dataset (which ain't no good dataset either) I  
 had to resize the frames (I used the one from image_3). By cropping out the inner patch and  
 resize the image (find it in prep_frames.py).  
-The ground truths are given as a rotation matrix which was difficult to parse (they could
+The ground truths are given as a rotation matrix which was difficult to parse (they could  
 have just given the 2 tranlational DoFs and the one rotation, it's just a planar movement).  
 The y-axis rotatation must be parsed first as otherwise strange values come out that don't  
 make any sense.  
