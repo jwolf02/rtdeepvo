@@ -51,7 +51,7 @@ have just given the 2 tranlational DoFs and the one rotation, it's just a planar
 The y-axis rotatation must be parsed first as otherwise strange values come out that don't  
 make any sense.  
 For convenience I converted the entire poses files to the following format:  
-<X-Axis Movement> <Z-Axis Movement> <Y-Axis Angle>  
+X-Axis-Movement Z-Axis-Movement Y-Axis-Angle  
 The camera looks in the direction of the z-axis.  
   
 FlowNet has a mean subtraction preprocessing before being run through the encoder and it  
