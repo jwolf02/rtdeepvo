@@ -13,7 +13,7 @@ made it work unless for some small toy dataset, like moving forward and backward
 I cannot prove the author's faked something about their paper and I recognized  
 some serious errors in the code of the other guys who tries to implement it.  
 The original network architecture featured and input size of 1280x384 which leads  
-to an encoder output size of 20x6x1024 and two LSTM layers each with 1000 cells.  
+to an encoder output size of 6x20x1024 and two LSTM layers each with 1000 cells.  
 This makes the network contain over 500M variables when the training dataset  
 containing less than 15K images each with a label of effectively 3 degrees of freedom.  
 Even with dropout, early stopping and data augmentation I do not believe it is possible  
