@@ -23,7 +23,14 @@ def get_bias(model, index):
 def move_axis(tensor):
   return np.moveaxis(tensor, [0, 1, 2, 3], [-1, -2, -4, -3])
 
-flownet = torchfile.load("flowNetS.t7")
+if len(sys.argv) < 3:
+  print("Usage:", sys.argv[0], "<flownet_pytorch_file> <output weights file>")
+  exit(1)
+
+flownet_pytorch_file = sys.argv[1]
+weights_file = sys.argv[2]
+
+flownet = torchfile.load(flownet_pytorch_file)
 
 flownet_kernels = []
 flownet_biases = []
@@ -119,7 +126,7 @@ def test_performance(model, n=30):
   print("\nmedian time per run:", round(np.median(values) if n > 0 else 0, 2), "ms")
 
 model = build_rcnn()
-model.save_weights(sys.argv[1] if len(sys.argv) > 1 else "rtdeepvo.h5")
+model.save_weights(weights_file)
 print(model.summary())
 test_performance(model, 30)
 
