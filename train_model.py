@@ -13,101 +13,42 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.keras.backend import set_session
 import random
 import sys
+import kitti
 
-WIDTH = 384
-HEIGHT = 256
+WIDTH = 256
+HEIGHT = 192
 CHANNELS = 6
 
 BATCH_SIZE = 2
 TS_LEN = 20
 
-MEAN = [0.4418668, 0.4422875, 0.41850266]
-
-dataset_len = { "00": 4541, "02": 4661, "05": 2761, "06": 1091, "07": 1091, "08": 4071, "09": 1591 }
-
-def load_frame(base_dir, sequence, i):
-  iname = base_dir + "/sequences/" + sequence + "/" + str(i).zfill(6) + '.png'
-  frame = cv2.imread(iname)
-  if frame is None or frame.shape != (HEIGHT, WIDTH, 3):
-    print("cannot load", iname)
-    exit(1)
-  return (frame / 255.) - MEAN
-
-def load_kitti_frames(base_dir, sequence, begin=0, end=1000000):
-  frames = []
-  last_frame = load_frame(base_dir, sequence, begin) # load initial frame
-  end = min(dataset_len[sequence], end)
-  print("\r", 0, "/", end - begin, sep="", end="", flush=True)
-  for i in range(begin + 1, end + 1):
-    frame = load_frame(base_dir, sequence, i)
-    frames.append(np.concatenate([last_frame, frame], axis=-1))
-    last_frame = frame
-    print("\r", i - begin, "/", end - begin, sep="", end="", flush=True)
-  print("\rdone loading", end - begin, "frames from sequence", sequence)
-
-  return np.asarray(frames)
-  
-def angle(x):
-  if x < -180.:
-    return x + 360.
-  elif x > 180.:
-    return x - 360.
-  else:
-    return x
-
-def load_kitti_poses(base_dir, sequence, begin=0, end=1000000):
-  end = min(dataset_len[sequence], end)
-  with open(base_dir + '/poses/' + sequence + '.txt', 'r') as f:
-    lines = f.readlines()
-		
-    r = []
-    t = []
-    for line in lines:
-      tokens = line.split(' ')
-      y = float(tokens[0])
-      x = float(tokens[1])
-      theta = float(tokens[2])
-      t.append(np.asarray([x, y]))
-      r.append(theta)
-    t_out = []
-    r_out = []
-    for i in range(begin, end):
-      t_out.append(t[i] - t[begin - 1] if begin > 0 else np.array([0.0, 0.0]))
-      r_out.append(angle(r[i] - r[begin - 1] if begin > 0 else np.asarray([0.0])))
-    return np.asarray(t_out), np.asarray(r_out)
-
-def load_kitti_sequence(base_dir, sequence, begin, num):
-  frames = load_kitti_frames(base_dir, sequence, begin, num)
-  t, r = load_kitti_poses(base_dir, sequence, begin, num)
-  return frames, t, r
-
 def euclidean_distance(y_true, y_pred):
   return K.sqrt(K.sum(K.square(y_pred - y_true), axis=-1))
 
-def build_rcnn(train_encoder=False):
+def build_rcnn(trainable_encoder_layers=[False, False, False, False, False, False, False, False, False]):
   print("building rcnn model")
   
   input_layer = keras.Input(batch_shape=(BATCH_SIZE, TS_LEN, HEIGHT, WIDTH, CHANNELS), name="input")
-  x = TimeDistributed(Conv2D(64, (7, 7), strides=(2, 2), padding="same", name="conv1"), name="dt_conv1", trainable=train_encoder)(input_layer)
+  x = TimeDistributed(Conv2D(64, (7, 7), strides=(2, 2), padding="same", name="conv1"), name="dt_conv1", trainable=trainable_encoder_layers[0])(input_layer)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky1"), name="dt_leaky1")(x)
-  x = TimeDistributed(Conv2D(128, (5, 5), strides=(2, 2), padding="same", name="conv2"), name="dt_conv2", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(128, (5, 5), strides=(2, 2), padding="same", name="conv2"), name="dt_conv2", trainable=trainable_encoder_layers[1])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky2"), name="dt_leaky2")(x)
-  x = TimeDistributed(Conv2D(256, (5, 5), strides=(2, 2), padding="same", name="conv3"), name="dt_conv3", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(256, (5, 5), strides=(2, 2), padding="same", name="conv3"), name="dt_conv3", trainable=trainable_encoder_layers[2])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky3"), name="dt_leaky3")(x)
-  x = TimeDistributed(Conv2D(256, (3, 3), strides=(1, 1), padding="same", name="conv3_1"), name="dt_conv3_1", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(256, (3, 3), strides=(1, 1), padding="same", name="conv3_1"), name="dt_conv3_1", trainable=trainable_encoder_layers[3])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky3_1"), name="dt_leaky3_1")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(2, 2), padding="same", name="conv4"), name="dt_conv4", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(512, (3, 3), strides=(2, 2), padding="same", name="conv4"), name="dt_conv4", trainable=trainable_encoder_layers[4])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky4"), name="dt_leaky4")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(1, 1), padding="same", name="conv4_1"), name="dt_conv4_1", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(512, (3, 3), strides=(1, 1), padding="same", name="conv4_1"), name="dt_conv4_1", trainable=trainable_encoder_layers[5])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky4_1"), name="dt_leaky4_1")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(2, 2), padding="same", name="conv5"), name="dt_conv5", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(512, (3, 3), strides=(2, 2), padding="same", name="conv5"), name="dt_conv5", trainable=trainable_encoder_layers[6])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky5"), name="dt_leaky5")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(1, 1), padding="same", name="conv5_1"), name="dt_conv5_1", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(512, (3, 3), strides=(1, 1), padding="same", name="conv5_1"), name="dt_conv5_1", trainable=trainable_encoder_layers[7])(x)
   x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky5_1"), name="dt_leaky5_1")(x)
-  x = TimeDistributed(Conv2D(1024, (3, 3), strides=(2, 2), padding="same", name="conv6"), name="dt_conv6", trainable=train_encoder)(x)
+  x = TimeDistributed(Conv2D(1024, (3, 3), strides=(2, 2), padding="same", name="conv6"), name="dt_conv6", trainable=trainable_encoder_layers[8])(x)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
-  x = tf.compat.v1.keras.layers.CuDNNLSTM(256, return_sequences=True, stateful=True, name="lstm1")(x)
-  x = tf.compat.v1.keras.layers.CuDNNLSTM(256, return_sequences=True, stateful=True, name="lstm2")(x)
+  x = tf.compat.v1.keras.layers.CuDNNLSTM(100, return_sequences=True, stateful=True, name="lstm1")(x)
+  x = tf.compat.v1.keras.layers.CuDNNLSTM(100, return_sequences=True, stateful=True, name="lstm2")(x)
   trans = TimeDistributed(Dense(2, name="translation"), name="dt_translation")(x)
   rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')

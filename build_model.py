@@ -5,20 +5,14 @@ import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout
+from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization
 from datetime import datetime
 import cv2
 from scipy.spatial.transform import Rotation as R
 from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.keras.backend import set_session
-import torchfile
+import torch
 import sys
-
-def get_kernel(model, index):
-  return model.modules[index].__dict__['_obj'][b'weight']
-  
-def get_bias(model, index):
-  return model.modules[index].__dict__['_obj'][b'bias']
 
 def move_axis(tensor):
   return np.moveaxis(tensor, [0, 1, 2, 3], [-1, -2, -4, -3])
@@ -26,38 +20,62 @@ def move_axis(tensor):
 if len(sys.argv) < 3:
   print("Usage:", sys.argv[0], "<flownet_pytorch_file> <output weights file>")
   exit(1)
-
-flownet_pytorch_file = sys.argv[1]
+  
+flownet_torch_file = sys.argv[1]
 weights_file = sys.argv[2]
 
-flownet = torchfile.load(flownet_pytorch_file)
+flownet_weights = dict()
+flownet_betas = dict()
+flownet_gammas = dict()
+flownet_moving_mean = dict()
+flownet_moving_var = dict()
 
-flownet_kernels = []
-flownet_biases = []
+pretrained_flownet = torch.load(flownet_torch_file, map_location=torch.device('cpu'))
+state_dict = pretrained_flownet['state_dict']
+for layer in ["conv1", "conv2", "conv3", "conv3_1", "conv4", "conv4_1", "conv5", "conv5_1", "conv6"]:
+  flownet_weights[layer] = move_axis(state_dict[layer + ".0.weight"].numpy())
+  flownet_betas[layer] = state_dict[layer + ".1.bias"].numpy()
+  flownet_gammas[layer] = state_dict[layer + ".1.weight"].numpy()
+  flownet_moving_mean[layer] = state_dict[layer + ".1.running_mean"].numpy()
+  flownet_moving_var[layer] = state_dict[layer + ".1.running_var"].numpy()
 
-for i in range(1, 18, 2):
-  k = move_axis(get_kernel(flownet, i))
-  b = get_bias(flownet, i)
-  print("layer ", i // 2, ": kernel_shape=", k.shape, " bias_shape=", b.shape, sep="")
-  flownet_kernels.append(k)
-  flownet_biases.append(b)
-  
-class FlowNetKernelInitializer(tf.keras.initializers.Initializer):
+class FNWeights(tf.keras.initializers.Initializer):
   def __init__(self, layer):
     self.layer = layer
 
   def __call__(self, shape, dtype=None):
-    return flownet_kernels[self.layer]
+    return flownet_weights[self.layer]
 
-class FlowNetBiasInitializer(tf.keras.initializers.Initializer):
+class FNBetas(tf.keras.initializers.Initializer):
   def __init__(self, layer):
     self.layer= layer
     
   def __call__(self, shape, dtype=None):
-    return flownet_biases[self.layer]
+    return flownet_betas[self.layer]
 
-WIDTH = 384
-HEIGHT = 256
+class FNGammas(tf.keras.initializers.Initializer):
+  def __init__(self, layer):
+    self.layer= layer
+    
+  def __call__(self, shape, dtype=None):
+    return flownet_gammas[self.layer]
+    
+class FNMovingMean(tf.keras.initializers.Initializer):
+  def __init__(self, layer):
+    self.layer = layer
+
+  def __call__(self, shape, dtype=None):
+    return flownet_moving_mean[self.layer]
+
+class FNMovingVar(tf.keras.initializers.Initializer):
+  def __init__(self, layer):
+    self.layer = layer
+    
+  def __call__(self, shape, dtype=None):
+    return flownet_moving_var[self.layer]
+
+WIDTH = 256
+HEIGHT = 192
 CHANNELS = 6
 
 BATCH_SIZE = 1
@@ -65,40 +83,31 @@ TS_LEN = 1
 
 def euclidean_distance(y_true, y_pred):
   return K.sqrt(K.sum(K.square(y_pred - y_true), axis=-1))
+  
+def conv(x, name, filters, size, stride, activation='relu', trainable=True):
+  x = TimeDistributed(Conv2D(filters, (size, size), strides=(stride, stride), padding="same", name=name, 
+    kernel_initializer=FNWeights(name), use_bias=False, activation=activation, trainable=trainable), name="dt_" + name)(x)
+  return TimeDistributed(BatchNormalization(beta_initializer=FNBetas(name), gamma_initializer=FNGammas(name),
+    moving_mean_initializer=FNMovingMean(name), moving_variance_initializer=FNMovingVar(name), trainable=trainable, name="bn_" + name), 
+    name="dt_bn_" + name)(x)
 
-def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN):
+def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN, trainable=False):
   print("building rcnn model")
   
   input_layer = keras.Input(batch_shape=(batch_size, ts_len, HEIGHT, WIDTH, CHANNELS), name="input")
-  x = TimeDistributed(Conv2D(64, (7, 7), strides=(2, 2), padding="same", name="conv1", 
-    kernel_initializer=FlowNetKernelInitializer(0), bias_initializer=FlowNetBiasInitializer(0)), name="dt_conv1")(input_layer)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky1"), name="dt_leaky1")(x)
-  x = TimeDistributed(Conv2D(128, (5, 5), strides=(2, 2), padding="same", name="conv2", 
-    kernel_initializer=FlowNetKernelInitializer(1), bias_initializer=FlowNetBiasInitializer(1)), name="dt_conv2")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky2"), name="dt_leaky2")(x)
-  x = TimeDistributed(Conv2D(256, (5, 5), strides=(2, 2), padding="same", name="conv3", 
-    kernel_initializer=FlowNetKernelInitializer(2), bias_initializer=FlowNetBiasInitializer(2)), name="dt_conv3")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky3"), name="dt_leaky3")(x)
-  x = TimeDistributed(Conv2D(256, (3, 3), strides=(1, 1), padding="same", name="conv3_1", 
-    kernel_initializer=FlowNetKernelInitializer(3), bias_initializer=FlowNetBiasInitializer(3)), name="dt_conv3_1")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky3_1"), name="dt_leaky3_1")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(2, 2), padding="same", name="conv4", 
-    kernel_initializer=FlowNetKernelInitializer(4), bias_initializer=FlowNetBiasInitializer(4)), name="dt_conv4")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky4"), name="dt_leaky4")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(1, 1), padding="same", name="conv4_1", 
-    kernel_initializer=FlowNetKernelInitializer(5), bias_initializer=FlowNetBiasInitializer(5)), name="dt_conv4_1")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky4_1"), name="dt_leaky4_1")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(2, 2), padding="same", name="conv5", 
-    kernel_initializer=FlowNetKernelInitializer(6), bias_initializer=FlowNetBiasInitializer(6)), name="dt_conv5")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky5"), name="dt_leaky5")(x)
-  x = TimeDistributed(Conv2D(512, (3, 3), strides=(1, 1), padding="same", name="conv5_1", 
-    kernel_initializer=FlowNetKernelInitializer(7), bias_initializer=FlowNetBiasInitializer(7)), name="dt_conv5_1")(x)
-  x = TimeDistributed(LeakyReLU(alpha=0.1, name="leaky5_1"), name="dt_leaky5_1")(x)
-  x = TimeDistributed(Conv2D(1024, (3, 3), strides=(2, 2), padding="same", name="conv6", 
-    kernel_initializer=FlowNetKernelInitializer(8), bias_initializer=FlowNetBiasInitializer(8)), name="dt_conv6")(x)
+  x = conv(input_layer, "conv1", 64, 7, 2, trainable=trainable)
+  x = conv(x, "conv2", 128, 5, 2, trainable=trainable)
+  x = conv(x, "conv3", 256, 5, 2, trainable=trainable)
+  x = conv(x, "conv3_1", 256, 3, 1, trainable=trainable)
+  x = conv(x, "conv4", 512, 3, 2, trainable=trainable)
+  x = conv(x, "conv4_1", 512, 3, 1, trainable=trainable)
+  x = conv(x, "conv5", 512, 3, 2, trainable=trainable)
+  x = conv(x, "conv5_1", 512, 3, 1, trainable=trainable)
+  x = conv(x, "conv6", 1024, 3, 2, activation=None, trainable=trainable)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
-  x = tf.compat.v1.keras.layers.CuDNNLSTM(256, return_sequences=True, stateful=True, name="lstm1")(x)
-  x = tf.compat.v1.keras.layers.CuDNNLSTM(256, return_sequences=True, stateful=True, name="lstm2")(x)
+  x = TimeDistributed(Dropout(0.2, name="dropout1"), name="dt_dropout1")(x)
+  x = LSTM(1000, return_sequences=True, stateful=True, name="lstm1")(x)
+  x = TimeDistributed(Dropout(0.4, name="dropout2"), name="dt_dropout2")(x)
   trans = TimeDistributed(Dense(2, name="translation"), name="dt_translation")(x)
   rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')
@@ -128,5 +137,5 @@ def test_performance(model, n=30):
 model = build_rcnn()
 model.save_weights(weights_file)
 print(model.summary())
-test_performance(model, 30)
+test_performance(model, 50)
 

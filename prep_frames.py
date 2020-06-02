@@ -16,8 +16,9 @@ for f in os.listdir(sequence_dir):
   if frame is None:
     print("cannot load", f)
     continue
-  frame = frame[0:376, 280:844, 0:3]
-  frame = cv2.resize(frame, (384, 256)) # extract inner patch of size (564, 376) and resize to (384, 256)
+  #frame = frame[0:376, 280:844, 0:3]
+  frame = frame[0:256, 21:362, 0:3]
+  frame = cv2.resize(frame, (256, 192)) # extract inner patch of size (564, 376) and resize to (384, 256)
   cv2.imwrite(output_dir + '/' + f, frame)
   i += 1
   print("\r", i, sep="", end="", flush=True)
