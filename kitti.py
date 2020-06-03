@@ -3,8 +3,8 @@ import cv2
 import math
 from datetime import datetime
 
-WIDTH = 384
-HEIGHT = 256
+WIDTH = 256
+HEIGHT = 192
 CHANNELS = 6
 
 MEAN = np.asarray([0.4418668, 0.4422875, 0.41850266])
@@ -37,22 +37,20 @@ def load_poses(kitti_poses_dir, sequence, begin=0, end=1000000, start_from_zero=
     r = []
     t = []
     for line in lines:
-      tokens = line.split(' ')
-      x = float(tokens[0])
-      y = float(tokens[1])
-      theta = float(tokens[2])
-      t.append(np.asarray([x, y]))
-      r.append(theta)
-    t_out = []
-    r_out = []
-    if start_from_zero:
-      for i in range(begin, end):
-        t_out.append(t[i] - t[begin - 1] if begin > 0 else np.asarray([0.0, 0.0]))
-        r_out.append(map_angle(r[i] - r[begin - 1] if begin > 0 else np.asarray([0.0])))
-    else:
-      t_out = t;
-      r_out = r
-    return np.asarray(t_out), np.asarray(r_out)
+      pose = [float(x) for x in line.split(' ')]
+      # pose = "x y z rot(x) rot(y) rot(z)
+      t.append(np.asarray([pose[0], pose[2]]))
+      r.append(pose[4])
+  t_out = np.asarray(t[begin:end]) - (np.asarray(t[begin - 1]) if begin - 1 > 0 and start_from_zero else np.asarray([0.0, 0.0]))
+  r_out = []
+  for i in range(begin, end):
+    r_d = r[i] - (r[begin - 1] if begin - 1 > 0 and start_from_zero else 0.0)
+    if r_d < -math.pi:
+      r_d += 2 * math.pi
+    elif r_d > math.pi:
+      r_d -= 2 * math.pi
+    r_out.append(r_d)
+  return t_out, np.asarray(r_out)
 
 def load_frame(kitti_sequence_dir, sequence, i, preprocess=True):
   iname = kitti_sequence_dir + "/" + sequence + "/" + str(i).zfill(6) + '.png'
