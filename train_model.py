@@ -128,6 +128,9 @@ def eval_model(base_dir, model):
     f.write(str(t_loss) + " " + str(r_loss) + "\n")
   print("t_loss:", t_loss, "r_loss:", r_loss)
 
+def push_changes():
+  os.system('git add . && git commit -m "some message" && git push')
+
 def train_rcnn(base_dir, model, weights_file):
   eval_model(base_dir, model)
   while True:
@@ -139,11 +142,15 @@ def train_rcnn(base_dir, model, weights_file):
       print("--------------- SAVING MODEL ---------------")
       model.save_weights(weights_file)
     eval_model(base_dir, model)
+    push_changes()
 
 if __name__ == "__main__":
   if len(sys.argv) < 3:
     print("Usage:", sys.argv[0], "<kitti dir> <weights file> [--train-encoder, --batch-norm]")
     exit(1)
+    
+  push_changes()
+  exit(0)
 
   kitti_dir = sys.argv[1]
   weights_file = sys.argv[2]
