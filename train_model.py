@@ -21,10 +21,10 @@ WIDTH = 256
 HEIGHT = 192
 CHANNELS = 6
 
-BATCH_SIZE = 1
-TS_LEN = 50
+BATCH_SIZE = 4
+TS_LEN = 15
 
-SEQ_SIZE = 500
+SEQ_SIZE = 900
 
 def euclidean_distance(y_true, y_pred):
   return K.sqrt(K.sum(K.square(y_pred - y_true), axis=-1))
@@ -47,7 +47,7 @@ def conv(x, name, filters, size, stride, dropout, batch_norm, activation=True, t
 def rnn(x, num_states, num_layers, dropout):
   for i in range(num_layers):
     x = tf.compat.v1.keras.layers.CuDNNLSTM(num_states, return_sequences=True, stateful=True, name="lstm" + str(i + 1))(x)
-    x = TimeDistributed(Dropout(dropout, name="dropout_lstm" + str(i + 1)), name="dt_dropout_lstm" + str(i + 1))(x)
+  x = TimeDistributed(Dropout(dropout, name="dropout_lstm_out"), name="dt_dropout_lstm_out")(x)
   return x
 
 def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN, batch_norm=True, trainable=False):
@@ -68,47 +68,77 @@ def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN, batch_norm=True, trainable=
   rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')
   losses = { 'dt_rotation': 'mae', 'dt_translation': 'mse' }
-  loss_weights = { 'dt_rotation': 100.0, 'dt_translation': 1.0 }
+  loss_weights = { 'dt_rotation': 1000.0, 'dt_translation': 1.0 }
   model.compile(optimizer='adagrad', loss=losses, loss_weights=loss_weights, metrics={"dt_translation": euclidean_distance, "dt_rotation": 'mae'})
   return model
-
-def eval_rcnn(base_dir, model):
-  print("evaulating model")
-  with open("val_loss.txt", "a") as f:
-    model.reset_states()
-    loss = []
-    for i in range(0, kitti.SEQ_LEN["06"]- SEQ_SIZE, SEQ_SIZE):
-      frames, t, r = load_sample_sequence(base_dir, "06", 500, offset=i)
-      # loss, t_mse, r_mse, t_euclid, r_mae
-      l = model.evaluate(frames, {"dt_translation": t, "dt_rotation": r}, batch_size=BATCH_SIZE, verbose=1)
-      loss.append((l[3], l[4]))
-    t_loss = (loss[0] + loss[2]) / 2
-    r_loss = (loss[1] + loss[3]) / 2
-    print("t_loss:", t_loss, " r_loss:", r_loss)
-    f.write(str(t_loss) + " " + str(r_loss) + "\n")
     
-def load_sample_sequence(base_dir, seq, size, offset=0, rand=False):
+def load_sample_sequence(base_dir, seq, size, offset=0, rand=False, start_from_zero=True):
   start_frame = random.randrange(kitti.SEQ_LEN[seq] - size - size - 1) if rand else offset
   print("loading sequence", seq, "starting with frame", start_frame)
   frames = kitti.load_frames(base_dir + "/sequences", seq, start_frame, start_frame + size)
-  t, r = kitti.load_poses(base_dir + "/poses", seq, start_frame, start_frame + size, start_from_zero=rand)
+  t, r = kitti.load_poses(base_dir + "/poses", seq, start_frame, start_frame + size, start_from_zero=start_from_zero)
   frames = frames.reshape([-1, TS_LEN, HEIGHT, WIDTH, CHANNELS])
   t = t.reshape([-1, TS_LEN, 2])
   r = r.reshape([-1, TS_LEN, 1])
   return frames, t, r
+  
+def load_sample_batch(base_dir):
+  frames = []
+  trans = []
+  rot = []
+  seqs = ["00", "02", "05", "08", "09"]
+  for i in range(BATCH_SIZE):
+    seq = seqs[random.randrange(0, len(seqs))]
+    f, t, r = load_sample_sequence(base_dir, seq, SEQ_SIZE//BATCH_SIZE, rand=True)
+    frames.append(f)
+    trans.append(t)
+    rot.append(r)
+  frames = np.stack(frames, axis=1).reshape([-1, TS_LEN, HEIGHT, WIDTH, CHANNELS])
+  t = np.stack(trans, axis=1).reshape([-1, TS_LEN, 2])
+  r = np.stack(rot, axis=1).reshape([-1, TS_LEN, 1])
+  return frames, t, r
+
+def eval_model(base_dir, model):
+  print("---------------- EVAL MODEL ----------------")
+  model.reset_states()
+  loss = []
+  for offset in range(0, kitti.SEQ_LEN['06'] - 150, 150):
+    frames = []
+    trans = []
+    rot = []
+    for seq in ['06', '07']:
+      f = kitti.load_frames(base_dir + "/sequences", seq, offset, offset + 150)
+      t, r = kitti.load_poses(base_dir + "/poses", seq, offset, offset + 150, start_from_zero=False)
+      frames.append([f, f])
+      trans.append([t, t])
+      rot.append([r, r])
+    frames = np.stack(frames, axis=1).reshape([-1, TS_LEN, HEIGHT, WIDTH, CHANNELS])
+    t = np.stack(trans, axis=1).reshape([-1, TS_LEN, 2])
+    r = np.stack(rot, axis=1).reshape([-1, TS_LEN, 1])
+    l = model.evaluate(frames, {'dt_translation': t, 'dt_rotation': r}, verbose=1, batch_size=BATCH_SIZE)
+    loss.append([l[3], l[4]])
+  t_loss = 0.0
+  r_loss = 0.0
+  for l in loss:
+    t_loss += l[0]
+    r_loss += l[1]
+  t_loss /= len(loss)
+  r_loss /= len(loss)
+  with open("val_loss.txt", "a") as f:
+    f.write(str(t_loss) + " " + str(r_loss) + "\n")
+  print("t_loss:", t_loss, "r_loss:", r_loss)
 
 def train_rcnn(base_dir, model, weights_file):
-  seqs = ["00", "02", "05", "08", "09"]
-  eval_rcnn(base_dir, model)
+  eval_model(base_dir, model)
   while True:
-    for _ in range(10):
-      seq = seqs[random.randrange(0, 5)]
-      model.reset_states()
-      frames, t, r = load_sample_sequence(base_dir, seq, SEQ_SIZE, rand=True)
-      model.fit(frames, { "dt_translation": t, "dt_rotation": r }, batch_size=BATCH_SIZE, epochs=4, verbose=1)
-    print("saving model")
-    model.save_weights(weights_file)
-    eval_rcnn(base_dir, model)
+    for _ in range(2):
+      for _ in range(10):
+        model.reset_states()
+        frames, t, r = load_sample_batch(base_dir)
+        model.fit(frames, { "dt_translation": t, "dt_rotation": r }, batch_size=BATCH_SIZE, epochs=4, verbose=1)
+      print("--------------- SAVING MODEL ---------------")
+      model.save_weights(weights_file)
+    eval_model(base_dir, model)
 
 if __name__ == "__main__":
   if len(sys.argv) < 3:

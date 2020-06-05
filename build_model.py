@@ -107,7 +107,7 @@ def conv(x, name, filters, size, stride, dropout, batch_norm, activation=True, t
 def rnn(x, num_states, num_layers, dropout):
   for i in range(num_layers):
     x = tf.compat.v1.keras.layers.CuDNNLSTM(num_states, return_sequences=True, stateful=True, name="lstm" + str(i + 1))(x)
-    x = TimeDistributed(Dropout(dropout, name="dropout_lstm" + str(i + 1)), name="dt_dropout_lstm" + str(i + 1))(x)
+  x = TimeDistributed(Dropout(dropout, name="dropout_lstm_out"), name="dt_dropout_lstm_out")(x)
   return x
 
 def build_rcnn(recurrent_units, batch_norm, trainable=False):
