@@ -148,9 +148,6 @@ if __name__ == "__main__":
   if len(sys.argv) < 3:
     print("Usage:", sys.argv[0], "<kitti dir> <weights file> [--train-encoder, --batch-norm]")
     exit(1)
-    
-  push_changes()
-  exit(0)
 
   kitti_dir = sys.argv[1]
   weights_file = sys.argv[2]
