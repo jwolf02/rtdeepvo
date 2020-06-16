@@ -27,14 +27,18 @@ class FNWeights(tf.keras.initializers.Initializer):
     self.layer = layer
 
   def __call__(self, shape, dtype=None):
-    return flownet_weights[self.layer]
+    kernel = flownet_weights[self.layer]
+    flownet_weights[self.layer] = None
+    return kernel
     
 class FNBias(tf.keras.initializers.Initializer):
   def __init__(self, layer):
     self.layer = layer
     
   def __call__(self, shape, dtype=None):
-    return flownet_bias[self.layer]
+    kernel = flownet_bias[self.layer]
+    flownet_bias[self.layer] = None
+    return kernel
 
 class FNBetas(tf.keras.initializers.Initializer):
   def __init__(self, layer):
@@ -90,20 +94,16 @@ def load_flownet_encoder(batch_norm):
     else:
       flownet_bias[layer] = state_dict[layer + ".0.bias"].numpy()
   
-def conv(x, name, filters, size, stride, dropout, batch_norm, activation=True, trainable=True):
+def conv(x, name, filters, size, stride, dropout, batch_norm, trainable=True):
   if batch_norm:
     x = TimeDistributed(Conv2D(filters, (size, size), strides=(stride, stride), padding="same", name=name, 
       kernel_initializer=FNWeights(name), use_bias=False, trainable=trainable), name="dt_" + name)(x)
-    if activation:
-      x = TimeDistributed(LeakyReLU(0.1, name="leaky_" + name), name="dt_leaky_" + name)(x)
     x = TimeDistributed(BatchNormalization(beta_initializer=FNBetas(name), gamma_initializer=FNGammas(name),
       moving_mean_initializer=FNMovingMean(name), moving_variance_initializer=FNMovingVar(name), trainable=trainable, name="bn_" + name), 
       name="dt_bn_" + name)(x)
   else:
     x = TimeDistributed(Conv2D(filters, (size, size), strides=(stride, stride), padding="same", name=name, 
       kernel_initializer=FNWeights(name), bias_initializer=FNBias(name), trainable=trainable), name="dt_" + name)(x)
-    if activation:
-      x = TimeDistributed(LeakyReLU(0.1, name="leaky_" + name), name="dt_leaky_" + name)(x)
   return TimeDistributed(Dropout(dropout, name="dropout_" + name), name="dt_dropout_" + name)(x)
   
 def rnn(x, num_states, num_layers, dropout):
@@ -126,7 +126,7 @@ def build_rcnn(recurrent_units, batch_norm, trainable=False):
   x = conv(x, "conv4_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv5", 512, 3, 2, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv5_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
-  x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, activation=False, trainable=trainable)
+  x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, trainable=trainable)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
   x = rnn(x, recurrent_units, 2, 0.5)
   trans = TimeDistributed(Dense(2, name="translation"), name="dt_translation")(x)
