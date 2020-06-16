@@ -64,8 +64,8 @@ class FNMovingVar(tf.keras.initializers.Initializer):
   def __call__(self, shape, dtype=None):
     return flownet_moving_var[self.layer]
 
-WIDTH = 256
-HEIGHT = 192
+WIDTH = 608
+HEIGHT = 182
 CHANNELS = 6
 
 BATCH_SIZE = 1
@@ -77,6 +77,8 @@ def move_axis(tensor):
 def load_flownet_encoder(batch_norm):
   pretrained_flownet = torch.load(flownet_torch_file, map_location=torch.device('cpu'))
   state_dict = pretrained_flownet['state_dict']
+  for key in state_dict.keys():
+    print(key)
 
   for layer in ["conv1", "conv2", "conv3", "conv3_1", "conv4", "conv4_1", "conv5", "conv5_1", "conv6"]:
     flownet_weights[layer] = move_axis(state_dict[layer + ".0.weight"].numpy())
