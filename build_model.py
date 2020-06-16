@@ -1,6 +1,7 @@
 #! /usr/bin/python3
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import cv2
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -8,7 +9,6 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization
 from datetime import datetime
-import cv2
 from scipy.spatial.transform import Rotation as R
 from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.keras.backend import set_session
