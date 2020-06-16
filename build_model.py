@@ -1,6 +1,7 @@
 #! /usr/bin/python3
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import cv2
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -8,7 +9,6 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization
 from datetime import datetime
-import cv2
 from scipy.spatial.transform import Rotation as R
 from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.keras.backend import set_session
@@ -27,14 +27,18 @@ class FNWeights(tf.keras.initializers.Initializer):
     self.layer = layer
 
   def __call__(self, shape, dtype=None):
-    return flownet_weights[self.layer]
+    kernel = flownet_weights[self.layer]
+    flownet_weights[self.layer] = None
+    return kernel
     
 class FNBias(tf.keras.initializers.Initializer):
   def __init__(self, layer):
     self.layer = layer
     
   def __call__(self, shape, dtype=None):
-    return flownet_bias[self.layer]
+    kernel = flownet_bias[self.layer]
+    flownet_bias[self.layer] = None
+    return kernel
 
 class FNBetas(tf.keras.initializers.Initializer):
   def __init__(self, layer):
@@ -64,8 +68,8 @@ class FNMovingVar(tf.keras.initializers.Initializer):
   def __call__(self, shape, dtype=None):
     return flownet_moving_var[self.layer]
 
-WIDTH = 256
-HEIGHT = 192
+WIDTH = 384
+HEIGHT = 182
 CHANNELS = 6
 
 BATCH_SIZE = 1
@@ -77,6 +81,8 @@ def move_axis(tensor):
 def load_flownet_encoder(batch_norm):
   pretrained_flownet = torch.load(flownet_torch_file, map_location=torch.device('cpu'))
   state_dict = pretrained_flownet['state_dict']
+  for key in state_dict.keys():
+    print(key)
 
   for layer in ["conv1", "conv2", "conv3", "conv3_1", "conv4", "conv4_1", "conv5", "conv5_1", "conv6"]:
     flownet_weights[layer] = move_axis(state_dict[layer + ".0.weight"].numpy())
@@ -88,20 +94,16 @@ def load_flownet_encoder(batch_norm):
     else:
       flownet_bias[layer] = state_dict[layer + ".0.bias"].numpy()
   
-def conv(x, name, filters, size, stride, dropout, batch_norm, activation=True, trainable=True):
+def conv(x, name, filters, size, stride, dropout, batch_norm, trainable=True):
   if batch_norm:
     x = TimeDistributed(Conv2D(filters, (size, size), strides=(stride, stride), padding="same", name=name, 
       kernel_initializer=FNWeights(name), use_bias=False, trainable=trainable), name="dt_" + name)(x)
-    if activation:
-      x = TimeDistributed(LeakyReLU(0.1, name="leaky_" + name), name="dt_leaky_" + name)(x)
     x = TimeDistributed(BatchNormalization(beta_initializer=FNBetas(name), gamma_initializer=FNGammas(name),
       moving_mean_initializer=FNMovingMean(name), moving_variance_initializer=FNMovingVar(name), trainable=trainable, name="bn_" + name), 
       name="dt_bn_" + name)(x)
   else:
     x = TimeDistributed(Conv2D(filters, (size, size), strides=(stride, stride), padding="same", name=name, 
       kernel_initializer=FNWeights(name), bias_initializer=FNBias(name), trainable=trainable), name="dt_" + name)(x)
-    if activation:
-      x = TimeDistributed(LeakyReLU(0.1, name="leaky_" + name), name="dt_leaky_" + name)(x)
   return TimeDistributed(Dropout(dropout, name="dropout_" + name), name="dt_dropout_" + name)(x)
   
 def rnn(x, num_states, num_layers, dropout):
