@@ -106,7 +106,7 @@ def conv(x, name, filters, size, stride, dropout, batch_norm, activation=True, t
   
 def rnn(x, num_states, num_layers, dropout):
   for i in range(num_layers):
-    x = tf.compat.v1.keras.layers.CuDNNLSTM(num_states, return_sequences=True, stateful=True, name="lstm" + str(i + 1))(x)
+    x = tf.compat.v1.keras.layers.CuDNNLSTM(num_states, return_sequences=True, stateful=True, name="lstm" + str(i + 1), unit_forget_bias=True)(x)
   x = TimeDistributed(Dropout(dropout, name="dropout_lstm_out"), name="dt_dropout_lstm_out")(x)
   return x
 
@@ -124,11 +124,11 @@ def build_rcnn(recurrent_units, batch_norm, trainable=False):
   x = conv(x, "conv4_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv5", 512, 3, 2, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv5_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
-  x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, activation=False, trainable=trainable)
+  x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, trainable=trainable)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
   x = rnn(x, recurrent_units, 2, 0.5)
-  trans = TimeDistributed(Dense(2, name="translation"), name="dt_translation")(x)
-  rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
+  trans = TimeDistributed(Dense(2, name="translation", bias_initializer="zeros"), name="dt_translation")(x)
+  rot = TimeDistributed(Dense(1, name='rotation', bias_initializer="zeros"), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')
   losses = { 'dt_rotation': 'mse', 'dt_translation': 'mse' }
   loss_weights = { 'dt_rotation': 100.0, 'dt_translation': 1.0 }

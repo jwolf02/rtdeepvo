@@ -24,7 +24,7 @@ CHANNELS = 6
 BATCH_SIZE = 4
 TS_LEN = 15
 
-SEQ_SIZE = 900
+SEQ_SIZE = 600
 
 def euclidean_distance(y_true, y_pred):
   return K.sqrt(K.sum(K.square(y_pred - y_true), axis=-1))
@@ -63,7 +63,7 @@ def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN, batch_norm=True, trainable=
   x = conv(x, "conv5_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, activation=False, trainable=trainable)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
-  x = rnn(x, 1000, 2, 0.5)
+  x = rnn(x, 500, 2, 0.5)
   trans = TimeDistributed(Dense(2, name="translation"), name="dt_translation")(x)
   rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')
@@ -132,13 +132,13 @@ def push_changes():
   os.system('git add . && git commit -m "some message" && git push')
 
 def train_rcnn(base_dir, model, weights_file):
-  eval_model(base_dir, model)
+  #eval_model(base_dir, model)
   while True:
     for _ in range(2):
       for _ in range(10):
         model.reset_states()
         frames, t, r = load_sample_batch(base_dir)
-        model.fit(frames, { "dt_translation": t, "dt_rotation": r }, batch_size=BATCH_SIZE, epochs=4, verbose=1)
+        model.fit(frames, { "dt_translation": t, "dt_rotation": r }, batch_size=BATCH_SIZE, epochs=2, verbose=1)
       print("--------------- SAVING MODEL ---------------")
       model.save_weights(weights_file)
     eval_model(base_dir, model)
