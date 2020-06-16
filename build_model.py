@@ -68,7 +68,7 @@ class FNMovingVar(tf.keras.initializers.Initializer):
   def __call__(self, shape, dtype=None):
     return flownet_moving_var[self.layer]
 
-WIDTH = 608
+WIDTH = 384
 HEIGHT = 182
 CHANNELS = 6
 
