@@ -68,7 +68,7 @@ def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN, batch_norm=True, trainable=
   rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')
   losses = { 'dt_rotation': 'mae', 'dt_translation': 'mse' }
-  loss_weights = { 'dt_rotation': 1000.0, 'dt_translation': 1.0 }
+  loss_weights = { 'dt_rotation': 100.0, 'dt_translation': 1.0 }
   model.compile(optimizer='adagrad', loss=losses, loss_weights=loss_weights, metrics={"dt_translation": euclidean_distance, "dt_rotation": 'mae'})
   return model
     
@@ -135,7 +135,7 @@ def train_rcnn(base_dir, model, weights_file):
   #eval_model(base_dir, model)
   while True:
     for _ in range(2):
-      for _ in range(10):
+      for _ in range(50):
         model.reset_states()
         frames, t, r = load_sample_batch(base_dir)
         model.fit(frames, { "dt_translation": t, "dt_rotation": r }, batch_size=BATCH_SIZE, epochs=2, verbose=1)
