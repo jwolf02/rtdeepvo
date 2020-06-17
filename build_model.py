@@ -7,7 +7,7 @@ import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization
+from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization, AveragePooling2D
 from datetime import datetime
 from scipy.spatial.transform import Rotation as R
 from tensorflow.core.protobuf import rewriter_config_pb2
@@ -68,8 +68,8 @@ class FNMovingVar(tf.keras.initializers.Initializer):
   def __call__(self, shape, dtype=None):
     return flownet_moving_var[self.layer]
 
-WIDTH = 384
-HEIGHT = 182
+WIDTH = 256
+HEIGHT = 192
 CHANNELS = 6
 
 BATCH_SIZE = 1
@@ -127,6 +127,7 @@ def build_rcnn(recurrent_units, batch_norm, trainable=False):
   x = conv(x, "conv5", 512, 3, 2, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv5_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, trainable=trainable)
+  x = TimeDistributed(AveragePooling2D(pool_size=(3, 4), name="gap"), name="dt_gap")(x)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
   x = rnn(x, recurrent_units, 2, 0.5)
   trans = TimeDistributed(Dense(2, name="translation", bias_initializer="zeros"), name="dt_translation")(x)

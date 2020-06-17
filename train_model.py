@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization
+from tensorflow.keras.layers import InputLayer, Conv2D, TimeDistributed, Flatten, Dense, LSTM, MaxPool2D, LeakyReLU, Dropout, BatchNormalization, AveragePooling2D
 from datetime import datetime
 import cv2
 from scipy.spatial.transform import Rotation as R
@@ -62,8 +62,9 @@ def build_rcnn(batch_size=BATCH_SIZE, ts_len=TS_LEN, batch_norm=True, trainable=
   x = conv(x, "conv5", 512, 3, 2, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv5_1", 512, 3, 1, 0.2, batch_norm, trainable=trainable)
   x = conv(x, "conv6", 1024, 3, 2, 0.5, batch_norm, activation=False, trainable=trainable)
+  x = TimeDistributed(AveragePooling2D(pool_size=(3, 4), name="gap"), name="dt_gap")(x)
   x = TimeDistributed(Flatten(name="flatten"), name="dt_flatten")(x)
-  x = rnn(x, 500, 2, 0.5)
+  x = rnn(x, 1000, 2, 0.5)
   trans = TimeDistributed(Dense(2, name="translation"), name="dt_translation")(x)
   rot = TimeDistributed(Dense(1, name='rotation'), name="dt_rotation")(x)
   model = keras.Model(inputs=[input_layer], outputs=[trans, rot], name='RTDeepVO')
