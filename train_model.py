@@ -134,8 +134,8 @@ def push_changes():
 def train_rcnn(base_dir, model, weights_file):
   #eval_model(base_dir, model)
   while True:
-    for _ in range(2):
-      for _ in range(50):
+    for _ in range(5):
+      for _ in range(20):
         model.reset_states()
         frames, t, r = load_sample_batch(base_dir)
         model.fit(frames, { "dt_translation": t, "dt_rotation": r }, batch_size=BATCH_SIZE, epochs=2, verbose=1)
